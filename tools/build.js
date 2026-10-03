@@ -1,0 +1,308 @@
+#!/usr/bin/env node
+/**
+ * Turns the day files into the feed the Mutma'innah app reads.
+ *
+ *   node tools/build.js           build into _site/ (what GitHub Pages serves)
+ *   node tools/build.js --check   read and report every file, write nothing
+ *
+ * THE DAY FILES
+ * -------------
+ * rawd/<YYYY-MM-DD>.txt is one hadith of Al-Rawd al-Basim min Khuluq al-Nabi
+ * al-Khatim, pasted as the book prints it. The file's name is the day it
+ * opens in the app, at midnight on the reader's own phone; a file dated ahead
+ * waits for its day.
+ *
+ *   فَصْلٌ فِي ...                      a fasl heading (Arabic)      optional
+ *   حضور ﷺ کا ...                      its Urdu                     optional
+ *   (9) أَجْرُ مَنْ ...                 the topic heading, numbered  optional
+ *   ضرورت مندوں کی ...                 its Urdu                     optional
+ *   17. عَنْ أَبِي هُرَيْرَةَ ...         the hadith, by its number    REQUIRED
+ *   أخرجه الطبراني ...                 the takhrij                  expected
+ *   حضرت ابو ہریرہ ...                  the Urdu translation         REQUIRED
+ *
+ * Blank lines do not matter, and neither does a ">" a chat window put in
+ * front of a line. Which line is which is read from the text itself: the
+ * matn and the headings are fully vowelled Arabic, the takhrij is unvowelled
+ * Arabic opening on أخرجه (or ذكره, رواه, ...), and Urdu is the only one
+ * that writes ے ں ٹ ڈ ڑ.
+ *
+ * WHAT IS CHANGED, AND WHAT IS NOT
+ * --------------------------------
+ * The words are the book's. Two things are touched:
+ * - Allah in the Arabic (matn and headings, not the takhrij) is written
+ *   اللّٰه with its case vowel, as everywhere else in the app. A bare one takes
+ *   the nominative after رضي / صلى / قال and the genitive otherwise.
+ * - Runs of spaces are folded to one.
+ *
+ * A file that cannot be read stops the whole build, so nothing half-read
+ * reaches anyone; GitHub emails the repo's owner when that happens, and the
+ * log names the file and the line.
+ *
+ * The marks are built from their code points below, never typed: Arabic typed
+ * through an editing tool can come back with its marks reordered.
+ */
+
+const fs = require('fs')
+const path = require('path')
+
+const ROOT = path.join(__dirname, '..')
+const SRC = path.join(ROOT, 'rawd')
+const OUT = path.join(ROOT, '_site', 'rawd')
+const CHECK = process.argv.includes('--check')
+
+// latest.json, the one file the app fetches every day, carries this many days
+// back from the build and everything scheduled ahead. Older days are in the
+// month files, read only when someone scrolls that far.
+const LATEST_DAYS = 75
+
+// ---- Characters -------------------------------------------------------------
+
+const ch = (...cps) => String.fromCharCode(...cps)
+const range = (a, b) => `${ch(a)}-${ch(b)}`
+
+const MK = range(0x064b, 0x065f) + ch(0x0670, 0x0640) // harakat, dagger alif, tatweel
+const LETTER = range(0x0621, 0x063a) + range(0x0641, 0x064a) + range(0x0671, 0x06d3)
+const VOWELS = new RegExp(`[${range(0x064b, 0x0652)}${ch(0x0670)}]`, 'g')
+const LETTERS = new RegExp(`[${LETTER}]`, 'g')
+// ٹ ڈ ڑ ں ے ۓ: no Arabic word has them, even typed on an Urdu keyboard.
+const URDU_ONLY = new RegExp(`[${ch(0x0679, 0x0688, 0x0691, 0x06ba, 0x06d2, 0x06d3)}]`)
+
+const INVISIBLE = new RegExp(`[${ch(0xfeff, 0x200b)}]`, 'g') // BOM, zero-width space
+const NBSP = new RegExp(ch(0x00a0), 'g')
+
+// Arabic-Indic and Urdu digits, read as numbers.
+const toInt = (s) =>
+  parseInt(
+    s.replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 0x0660).replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 0x06f0),
+    10,
+  )
+const DIGITS = `[0-9${range(0x0660, 0x0669)}${range(0x06f0, 0x06f9)}]+`
+
+// ---- Reading a line ---------------------------------------------------------
+
+const clean = (line) =>
+  line
+    .replace(INVISIBLE, '')
+    .replace(NBSP, ' ')
+    .replace(/^\s*>+\s*/, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+
+const vowelRatio = (s) => {
+  const letters = (s.match(LETTERS) || []).length
+  return letters ? (s.match(VOWELS) || []).length / letters : 0
+}
+const isVowelled = (s) => vowelRatio(s) >= 0.3
+const isUrdu = (s) => !isVowelled(s) && URDU_ONLY.test(s)
+
+// Letters only, one form of each, so a prefix is recognised however the line
+// is vowelled or whichever keyboard typed it.
+const fold = (s) =>
+  s
+    .replace(new RegExp(`[${MK}]`, 'g'), '')
+    .replace(new RegExp(`[${ch(0x0622, 0x0623, 0x0625, 0x0671)}]`, 'g'), ch(0x0627))
+    .replace(new RegExp(`[${ch(0x06c1, 0x06be)}]`, 'g'), ch(0x0647))
+    .replace(new RegExp(`[${ch(0x06cc, 0x0649)}]`, 'g'), ch(0x064a))
+    .replace(new RegExp(ch(0x06a9), 'g'), ch(0x0643))
+    .replace(new RegExp(ch(0x06c3), 'g'), ch(0x0629))
+
+const TAKHRIJ_WORDS = ['اخرجه', 'واخرجه', 'اخرجها', 'ذكره', 'وذكره', 'اورده', 'انظر', 'ينظر']
+const isTakhrij = (s) => {
+  if (isVowelled(s)) return false
+  const first = fold(s).split(/\s+/)[0] || ''
+  return TAKHRIJ_WORDS.includes(first) || first === 'رواه'
+}
+
+const HADITH_START = new RegExp(`^(${DIGITS})\\s*(?:\\/\\s*(${DIGITS})\\s*)?[.${ch(0x06d4)}\\-]\\s*`)
+const TOPIC_START = new RegExp(`^\\(\\s*(${DIGITS})\\s*\\)\\s*`)
+const isFasl = (s) => fold(s).startsWith('فصل')
+
+// ---- The Name ---------------------------------------------------------------
+
+const ALLAH = new RegExp(
+  `(?<![${LETTER}${MK}])(?:[وفبتك][${MK}]*){0,2}(?:[اٱأ][${MK}]*ل[${MK}]*|ل[${MK}]*)ل[${MK}]*[هہ][${MK}]*(?:م[${MK}]*)?(?![${LETTER}])`,
+  'g',
+)
+const SHADDA_DAGGER = ch(0x0651, 0x0670)
+const DAMMA = ch(0x064f)
+const KASRA = ch(0x0650)
+const CASE_VOWEL = new RegExp(`[${range(0x064b, 0x0650)}${ch(0x0652)}]`)
+const bare = (w) => w.replace(new RegExp(`[${MK}]`, 'g'), '')
+const NOMINATIVE_AFTER = new Set(['رضي', 'رضى', 'رضی', 'صلى', 'صلی', 'قال'])
+
+const markAllah = (text) =>
+  text.replace(ALLAH, (word, offset, whole) => {
+    const heh = Math.max(word.lastIndexOf('ه'), word.lastIndexOf('ہ'))
+    const lam = word.lastIndexOf('ل', heh)
+    const after = word.slice(heh + 1)
+    const meem = after.indexOf('م')
+    let hehMarks = meem >= 0 ? after.slice(0, meem) : after
+    const rest = meem >= 0 ? after.slice(meem) : ''
+    if (!CASE_VOWEL.test(hehMarks)) {
+      const before = bare(whole.slice(0, offset).trim().split(/\s+/).pop() || '')
+      hehMarks = (rest || NOMINATIVE_AFTER.has(before) ? DAMMA : KASRA) + hehMarks
+    }
+    return word.slice(0, lam + 1) + SHADDA_DAGGER + word[heh] + hehMarks + rest
+  })
+
+// ---- One file ---------------------------------------------------------------
+
+class FileError extends Error {}
+
+/**
+ * One day file's text → { n, headings, arabic, takhrij, urdu }, or a FileError
+ * that says what is wrong with it in words the person who wrote it can act on.
+ */
+const parseDay = (text) => {
+  const lines = text.split(/\r?\n/).map(clean).filter(Boolean)
+  const headings = []
+  let i = 0
+
+  // Headings, each Arabic line with the Urdu line under it, up to the hadith.
+  for (; i < lines.length && !HADITH_START.test(lines[i]); i++) {
+    const line = lines[i]
+    if (isUrdu(line)) {
+      headings.push({ kind: 'other', ar: '', ur: line })
+      continue
+    }
+    const heading = { kind: isFasl(line) ? 'fasl' : 'other', ar: line, ur: '' }
+    const topic = line.match(TOPIC_START)
+    if (topic) {
+      heading.kind = 'topic'
+      heading.n = toInt(topic[1])
+      heading.ar = line.slice(topic[0].length)
+    }
+    const next = lines[i + 1]
+    if (next && !HADITH_START.test(next) && isUrdu(next)) {
+      heading.ur = next
+      i++
+    }
+    headings.push(heading)
+  }
+
+  if (i >= lines.length) {
+    throw new FileError('no hadith found: the hadith must start with its number, like "17. عَنْ ..."')
+  }
+
+  const start = lines[i].match(HADITH_START)
+  const n = toInt(start[2] || start[1])
+  const arabic = [lines[i].slice(start[0].length)]
+  const takhrij = []
+  const urdu = []
+  let state = 'matn'
+
+  for (i++; i < lines.length; i++) {
+    const line = lines[i]
+    if (state !== 'matn' && HADITH_START.test(line) && isVowelled(line)) {
+      throw new FileError(`a second hadith starts at "${line.slice(0, 40)}": one hadith per file`)
+    }
+    if (state === 'matn') {
+      if (isTakhrij(line)) state = 'takhrij'
+      else if (isUrdu(line)) state = 'urdu'
+    } else if (state === 'takhrij' && isUrdu(line)) {
+      state = 'urdu'
+    }
+    ;({ matn: arabic, takhrij, urdu })[state].push(line)
+  }
+
+  if (!arabic.join('').trim()) throw new FileError('the hadith has no Arabic after its number')
+  if (!urdu.length) throw new FileError('no Urdu translation found after the Arabic and the takhrij')
+
+  return {
+    n,
+    headings: headings.map((h) => ({ ...h, ar: markAllah(h.ar) })),
+    arabic: markAllah(arabic.join('\n')),
+    takhrij: takhrij.join('\n'),
+    urdu: urdu.join('\n'),
+  }
+}
+
+// Characters that come in with a paste and draw as empty boxes in the app:
+// Hebrew, Devanagari, the private-use area, and the replacement character.
+const strays = (s) => {
+  const found = new Set()
+  for (const c of s) {
+    const cp = c.codePointAt(0)
+    if ((cp >= 0x0590 && cp <= 0x05ff) || (cp >= 0x0900 && cp <= 0x097f) || (cp >= 0xe000 && cp <= 0xf8ff) || cp === 0xfffd) {
+      found.add(`U+${cp.toString(16).toUpperCase().padStart(4, '0')}`)
+    }
+  }
+  return [...found]
+}
+
+const DAY_FILE = /^(\d{4})-(\d{2})-(\d{2})\.txt$/
+const isRealDay = (y, m, d) => {
+  const date = new Date(Date.UTC(+y, +m - 1, +d))
+  return date.getUTCFullYear() === +y && date.getUTCMonth() === +m - 1 && date.getUTCDate() === +d
+}
+
+// ---- The build --------------------------------------------------------------
+
+const main = () => {
+  const files = fs.existsSync(SRC) ? fs.readdirSync(SRC).filter((f) => !f.startsWith('.')).sort() : []
+  const entries = []
+  const errors = []
+  const warnings = []
+
+  for (const file of files) {
+    const day = file.match(DAY_FILE)
+    if (!day || !isRealDay(day[1], day[2], day[3])) {
+      errors.push(`${file}: the name must be the date, like 2026-10-04.txt`)
+      continue
+    }
+    const text = fs.readFileSync(path.join(SRC, file), 'utf8')
+    try {
+      const entry = { date: `${day[1]}-${day[2]}-${day[3]}`, ...parseDay(text) }
+      const bad = strays(JSON.stringify(entry))
+      if (bad.length) throw new FileError(`characters that show as empty boxes: ${bad.join(', ')}`)
+      if (!entry.takhrij) warnings.push(`${file}: no takhrij found (a line starting أخرجه ...)`)
+      entries.push(entry)
+    } catch (e) {
+      if (!(e instanceof FileError)) throw e
+      errors.push(`${file}: ${e.message}`)
+    }
+  }
+
+  for (const e of entries) {
+    console.log(
+      `${e.date}  hadith ${String(e.n).padStart(4)}  ` +
+        `${e.headings.map((h) => h.kind + (h.n ? ` ${h.n}` : '')).join(', ') || 'no headings'}  ` +
+        `arabic ${e.arabic.length}  takhrij ${e.takhrij.length}  urdu ${e.urdu.length}`,
+    )
+  }
+  warnings.forEach((w) => console.log(`warning  ${w}`))
+  if (errors.length) {
+    errors.forEach((e) => console.error(`ERROR  ${e}`))
+    console.error(`\n${errors.length} file(s) could not be read; nothing was published.`)
+    process.exit(1)
+  }
+  console.log(`${entries.length} day(s) read`)
+  if (CHECK) return
+
+  const built = new Date()
+  const cutoff = new Date(built.getTime() - LATEST_DAYS * 86400000).toISOString().slice(0, 10)
+  const months = [...new Set(entries.map((e) => e.date.slice(0, 7)))]
+
+  fs.rmSync(OUT, { recursive: true, force: true })
+  fs.mkdirSync(OUT, { recursive: true })
+  const write = (name, data) => fs.writeFileSync(path.join(OUT, name), JSON.stringify(data) + '\n', 'utf8')
+
+  write('latest.json', {
+    v: 1,
+    book: 'rawd',
+    built: built.toISOString(),
+    // The first day ever posted: the app offers older months only while the
+    // days it holds do not reach back this far.
+    earliest: entries.length ? entries[0].date : null,
+    months,
+    entries: entries.filter((e) => e.date >= cutoff),
+  })
+  for (const month of months) {
+    write(`${month}.json`, { v: 1, book: 'rawd', month, entries: entries.filter((e) => e.date.startsWith(month)) })
+  }
+  console.log(`wrote latest.json and ${months.length} month file(s) to ${path.relative(ROOT, OUT)}`)
+}
+
+if (require.main === module) main()
+
+module.exports = { parseDay, markAllah, FileError }
