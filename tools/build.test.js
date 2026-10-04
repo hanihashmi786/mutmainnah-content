@@ -40,6 +40,14 @@ test('headings are optional', () => {
   assert.strictEqual(d.n, 17)
 })
 
+test('an English line before the hadith is the day\'s title', () => {
+  assert.strictEqual(parseDay(sample).title, undefined)
+  const d = parseDay('Title: Relieving a believer\n' + sample)
+  assert.strictEqual(d.title, 'Relieving a believer')
+  assert.strictEqual(d.headings.length, 2)
+  assert.strictEqual(parseDay('Relieving a believer\n' + sample).title, 'Relieving a believer')
+})
+
 test('a takhrij over several lines stays one takhrij', () => {
   const text = sample.replace('الرقم 4504،', 'الرقم 4504،\nوالديلمي في مسند الفردوس، 3/568، الرقم 5826.')
   const d = parseDay(text)

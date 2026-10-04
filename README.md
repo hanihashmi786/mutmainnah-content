@@ -14,6 +14,7 @@ This repo is public on purpose: GitHub Pages hosts it for free.
 4. Hadith waisi hi paste karein jaisi kitaab mein hai:
 
    ```
+   Title: His generosity     (English naam, agar dena ho)
    فَصْلٌ فِي ...            (fasl, agar ho)
    حضور ﷺ کا ...            (us ka Urdu)
    (9) أَجْرُ مَنْ ...        (topic, agar ho)
@@ -29,6 +30,9 @@ Hadith us taareekh ko raat 12 baje (har user ke apne waqt se) app mein khulegi. 
 taareekh wali file pehle daal sakte hain; woh apne din tak chhupi rahegi.
 
 **Allah ke aeraab** khud lag jate hain (اللّٰه). Fasl aur topic na hon toh woh lines chhor dein.
+
+**Title** sirf pichhle dinon ki list ke liye hai (app English mein ho tab). Na dein toh list
+mein topic ka Urdu dikhta hai.
 
 ## Agar ghalti ho
 

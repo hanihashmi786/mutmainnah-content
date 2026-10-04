@@ -12,6 +12,7 @@
  * opens in the app, at midnight on the reader's own phone; a file dated ahead
  * waits for its day.
  *
+ *   Title: His generosity              the day's name in English    optional
  *   فَصْلٌ فِي ...                      a fasl heading (Arabic)      optional
  *   حضور ﷺ کا ...                      its Urdu                     optional
  *   (9) أَجْرُ مَنْ ...                 the topic heading, numbered  optional
@@ -113,6 +114,12 @@ const isTakhrij = (s) => {
   return TAKHRIJ_WORDS.includes(first) || first === 'رواه'
 }
 
+// A line of English before the hadith, "Title: His generosity" or just the
+// words, names the day in the app's list of earlier days.
+const ARABIC_LETTER = new RegExp(`[${LETTER}]`)
+const isEnglish = (s) => /[A-Za-z]/.test(s) && !ARABIC_LETTER.test(s)
+const TITLE_PREFIX = /^title\s*[:\-]\s*/i
+
 const HADITH_START = new RegExp(`^(${DIGITS})\\s*(?:\\/\\s*(${DIGITS})\\s*)?[.${ch(0x06d4)}\\-]\\s*`)
 const TOPIC_START = new RegExp(`^\\(\\s*(${DIGITS})\\s*\\)\\s*`)
 const isFasl = (s) => fold(s).startsWith('فصل')
@@ -156,11 +163,17 @@ class FileError extends Error {}
 const parseDay = (text) => {
   const lines = text.split(/\r?\n/).map(clean).filter(Boolean)
   const headings = []
+  let title = ''
   let i = 0
 
   // Headings, each Arabic line with the Urdu line under it, up to the hadith.
   for (; i < lines.length && !HADITH_START.test(lines[i]); i++) {
     const line = lines[i]
+    if (isEnglish(line)) {
+      const words = line.replace(TITLE_PREFIX, '')
+      title = title ? `${title} ${words}` : words
+      continue
+    }
     if (isUrdu(line)) {
       headings.push({ kind: 'other', ar: '', ur: line })
       continue
@@ -210,6 +223,7 @@ const parseDay = (text) => {
 
   return {
     n,
+    ...(title && { title }),
     headings: headings.map((h) => ({ ...h, ar: markAllah(h.ar) })),
     arabic: markAllah(arabic.join('\n')),
     takhrij: takhrij.join('\n'),
