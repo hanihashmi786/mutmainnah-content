@@ -126,6 +126,16 @@ test('a post quoting two Arabic blocks keeps both, with both translations', () =
   assert.ok(d.urdu.endsWith('دوسرا ترجمہ ہے۔'))
 })
 
+test('a later block numbered "5 -" without ">" joins the Arabic too', () => {
+  const lines = sample.split('\n')
+  const matn = lines.find((l) => l.startsWith('> 17.')).slice(6)
+  const text = sample.replace('> 17. ', '4 - ') + '\n5 - ' + matn + '\n\nدوسرا ترجمہ ہے۔\n'
+  const d = parseDay(text)
+  assert.strictEqual(d.n, 4)
+  assert.strictEqual(d.arabic.split('\n').length, 2)
+  assert.ok(d.urdu.endsWith('دوسرا ترجمہ ہے۔'))
+})
+
 test('two posts in one file stop the build', () => {
   assert.throws(() => parseDay(sample + '\n' + sample), /second/)
 })

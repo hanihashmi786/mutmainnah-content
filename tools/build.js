@@ -270,15 +270,14 @@ const parseDay = (text) => {
     if (state !== 'matn' && isVowelled(line) && isFasl(line)) {
       throw new FileError(`a second post starts at "${line.slice(0, 40)}": one day per file`)
     }
-    // A post may quote its Arabic in more than one block, an ayah and its
-    // translation, then the next ayah and its own. The later blocks join the
-    // Arabic and their translations the Urdu, each in order.
-    if (state !== 'matn' && quoted && isVowelled(line)) {
+    // A post may set its Arabic in more than one block, an ayah and its
+    // translation, then the next ayah ("> 2, ..." or "5 - ...") and its own.
+    // The later blocks join the Arabic and their translations the Urdu, each
+    // in order. Two posts pasted into one file are caught by their second
+    // fasl heading above, not here.
+    if (state !== 'matn' && isVowelled(line) && (quoted || HADITH_START.test(line))) {
       arabic.push(line.replace(HADITH_START, ''))
       continue
-    }
-    if (state !== 'matn' && HADITH_START.test(line) && isVowelled(line)) {
-      throw new FileError(`a second hadith starts at "${line.slice(0, 40)}": one hadith per file`)
     }
     if (state === 'matn') {
       if (isTakhrij(line)) state = 'takhrij'
