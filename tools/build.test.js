@@ -67,8 +67,51 @@ test('Urdu or Arabic-Indic digits number the hadith too', () => {
   assert.strictEqual(parseDay(sample.replace('17.', ch(0x0661, 0x0667) + '.')).n, 17)
 })
 
-test('a day without the hadith number stops the build', () => {
-  assert.throws(() => parseDay(sample.replace('17. ', '')), FileError)
+test('a hadith quoted with ">" needs no number', () => {
+  const d = parseDay(sample.replace('17. ', ''))
+  assert.strictEqual(d.n, null)
+  assert.ok(d.arabic.startsWith('عَنْ'))
+  assert.ok(d.takhrij.startsWith('أخرجه'))
+})
+
+test('a day with neither the number nor ">" stops the build', () => {
+  assert.throws(() => parseDay(sample.replace('> 17. ', '')), FileError)
+})
+
+test('a WhatsApp post reads as it stands', () => {
+  const post = [
+    '[9/1, 16:16] +92 300 0000000: https://chat.whatsapp.com/abc...',
+    'https://www.facebook.com/share/abc/',
+    sample.replace('أخرجه', '(1) أخرجه').replace('(9)', 'الْحَدِيث\n\n(9)'),
+    '',
+    ' الرَّوضُ البَاسِم مِن خُلُقِ النَّبِی الخَاتِمﷺ',
+  ].join('\n')
+  const d = parseDay(post)
+  assert.strictEqual(d.title, undefined)
+  assert.deepStrictEqual(d.headings.map((h) => h.kind), ['fasl', 'topic'])
+  assert.ok(d.takhrij.startsWith('أخرجه'))
+  assert.strictEqual(d.urdu.split('\n').length, 2)
+})
+
+test('a footnote mark makes a takhrij of any unvowelled Arabic', () => {
+  const d = parseDay(sample.replace('أخرجه الطبراني', '(2) أبو نعيم'))
+  assert.ok(d.takhrij.startsWith('أبو نعيم'))
+  assert.ok(!d.arabic.includes('أبو نعيم'))
+})
+
+test('a fasl opened by Urdu prose alone is an introduction', () => {
+  const fasl = sample.split('\n').slice(0, 2).join('\n')
+  const d = parseDay(`${fasl}\n\nانسان کتنا ہی صحت مند کیوں نہ ہو، وہ دوسروں کا ضرورت مند رہتا ہے۔\n`)
+  assert.strictEqual(d.kind, 'intro')
+  assert.strictEqual(d.arabic, '')
+  assert.deepStrictEqual(d.headings.map((h) => h.kind), ['fasl'])
+  assert.ok(d.headings[0].ur)
+  assert.ok(d.urdu.startsWith('انسان'))
+})
+
+test('an Urdu line numbered like a hadith is not taken for one', () => {
+  const text = sample.replace('> 17. ', '').replace('حضرت ابو', '23. حضرت ابو')
+  assert.throws(() => parseDay(text), FileError)
 })
 
 test('a day without the Urdu stops the build', () => {

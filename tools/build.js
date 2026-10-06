@@ -21,6 +21,11 @@
  *   أخرجه الطبراني ...                 the takhrij                  expected
  *   حضرت ابو ہریرہ ...                  the Urdu translation         REQUIRED
  *
+ * A post copied out of WhatsApp reads as it stands: the hadith may open on
+ * ">" instead of its number, a "(1)" before the takhrij is the book's
+ * footnote mark, and the chat's "[9/1, 16:16] ..." line, links, the الحديث /
+ * القرآن label and the book's name signed at the foot are all left out.
+ *
  * Blank lines do not matter, and neither does a ">" a chat window put in
  * front of a line. Which line is which is read from the text itself: the
  * matn and the headings are fully vowelled Arabic, the takhrij is unvowelled
@@ -107,11 +112,32 @@ const fold = (s) =>
     .replace(new RegExp(ch(0x06a9), 'g'), ch(0x0643))
     .replace(new RegExp(ch(0x06c3), 'g'), ch(0x0629))
 
+// The footnote number the book sets before a takhrij, "(1) أخرجه ...".
+const FOOTNOTE = new RegExp(`^\\(\\s*${DIGITS}\\s*\\)\\s*`)
+
 const TAKHRIJ_WORDS = ['اخرجه', 'واخرجه', 'اخرجها', 'ذكره', 'وذكره', 'اورده', 'انظر', 'ينظر']
 const isTakhrij = (s) => {
   if (isVowelled(s)) return false
+  // A footnote mark on unvowelled Arabic is the takhrij whatever its first
+  // word: "(2) أبو نعيم في حلية الأولياء".
+  if (FOOTNOTE.test(s) && !isUrdu(s)) return true
   const first = fold(s).split(/\s+/)[0] || ''
   return TAKHRIJ_WORDS.includes(first) || first === 'رواه'
+}
+
+// What a WhatsApp post carries around the text, dropped wherever it stands:
+// the "[9/1, 16:16] +92 ...:" line a copied chat puts over each message, a
+// link on a line of its own, the الحديث label (on a page of hadith it says
+// nothing), and the book's name signed under the post. The other section
+// labels, القرآن and الآثار والأقوال, stay as headings: they tell the reader
+// that the day's text is an ayah or a saying, not a hadith.
+const CHAT_HEADER = /^\[\d{1,2}\/\d{1,2}(?:\/\d{2,4})?,\s*\d{1,2}:\d{2}[^\]]*\]/
+const LINK = /^https?:\/\/\S+$/
+const NOT_LETTER = new RegExp(`[^${LETTER}]`, 'g')
+const isScaffold = (s) => {
+  if (CHAT_HEADER.test(s) || LINK.test(s)) return true
+  const letters = fold(s).replace(NOT_LETTER, '')
+  return letters === 'الحديث' || letters.startsWith('الروضالباسم')
 }
 
 // A line of English before the hadith, "Title: His generosity" or just the
@@ -123,6 +149,11 @@ const TITLE_PREFIX = /^title\s*[:\-]\s*/i
 const HADITH_START = new RegExp(`^(${DIGITS})\\s*(?:\\/\\s*(${DIGITS})\\s*)?[.${ch(0x06d4)}\\-]\\s*`)
 const TOPIC_START = new RegExp(`^\\(\\s*(${DIGITS})\\s*\\)\\s*`)
 const isFasl = (s) => fold(s).startsWith('فصل')
+
+// Where the hadith starts: the line a WhatsApp post quotes with ">", or the
+// line that opens on the hadith's number, "17. عَنْ ...". Only Arabic counts,
+// so an Urdu line numbered "23. اور ..." is never taken for a hadith.
+const opensHadith = (l) => l.quoted || (HADITH_START.test(l.text) && isVowelled(l.text.replace(HADITH_START, '')))
 
 // ---- The Name ---------------------------------------------------------------
 
@@ -159,16 +190,21 @@ class FileError extends Error {}
 /**
  * One day file's text → { n, headings, arabic, takhrij, urdu }, or a FileError
  * that says what is wrong with it in words the person who wrote it can act on.
+ * `n` is null when the hadith came without its number (a WhatsApp post that
+ * marks it with ">" alone); the app shows no number either way.
  */
 const parseDay = (text) => {
-  const lines = text.split(/\r?\n/).map(clean).filter(Boolean)
+  const lines = text
+    .split(/\r?\n/)
+    .map((raw) => ({ quoted: /^\s*>/.test(raw.replace(INVISIBLE, '')), text: clean(raw) }))
+    .filter((l) => l.text && !isScaffold(l.text))
   const headings = []
   let title = ''
   let i = 0
 
   // Headings, each Arabic line with the Urdu line under it, up to the hadith.
-  for (; i < lines.length && !HADITH_START.test(lines[i]); i++) {
-    const line = lines[i]
+  for (; i < lines.length && !opensHadith(lines[i]); i++) {
+    const line = lines[i].text
     if (isEnglish(line)) {
       const words = line.replace(TITLE_PREFIX, '')
       title = title ? `${title} ${words}` : words
@@ -184,28 +220,50 @@ const parseDay = (text) => {
       heading.kind = 'topic'
       heading.n = toInt(topic[1])
       heading.ar = line.slice(topic[0].length)
+    } else if (heading.kind === 'other' && headings.some((h) => h.kind === 'fasl')) {
+      // A heading under a fasl is its topic, numbered in the book or not.
+      heading.kind = 'topic'
     }
     const next = lines[i + 1]
-    if (next && !HADITH_START.test(next) && isUrdu(next)) {
-      heading.ur = next
+    if (next && !opensHadith(next) && isUrdu(next.text)) {
+      heading.ur = next.text
       i++
     }
     headings.push(heading)
   }
 
   if (i >= lines.length) {
-    throw new FileError('no hadith found: the hadith must start with its number, like "17. عَنْ ..."')
+    // No hadith: a day that opens a fasl with the book's own Urdu
+    // introduction to it. The Urdu after the fasl is the text. Only a fasl may
+    // stand over it: any other Arabic line means a hadith that lost its number
+    // and its ">", which must stop the build, not pass for an introduction.
+    let last = headings.length
+    while (last > 0 && !headings[last - 1].ar) last--
+    const prose = headings.slice(last).map((h) => h.ur)
+    const arabicHeads = headings.filter((h) => h.ar)
+    if (!prose.length || !arabicHeads.length || arabicHeads.some((h) => h.kind !== 'fasl')) {
+      throw new FileError('no hadith found: start the hadith with its number, like "17. عَنْ ...", or with ">"')
+    }
+    return {
+      n: null,
+      ...(title && { title }),
+      kind: 'intro',
+      headings: headings.slice(0, last).map((h) => ({ ...h, ar: markAllah(h.ar) })),
+      arabic: '',
+      takhrij: '',
+      urdu: prose.join('\n'),
+    }
   }
 
-  const start = lines[i].match(HADITH_START)
-  const n = toInt(start[2] || start[1])
-  const arabic = [lines[i].slice(start[0].length)]
+  const start = lines[i].text.match(HADITH_START)
+  const n = start ? toInt(start[2] || start[1]) : null
+  const arabic = [start ? lines[i].text.slice(start[0].length) : lines[i].text]
   const takhrij = []
   const urdu = []
   let state = 'matn'
 
   for (i++; i < lines.length; i++) {
-    const line = lines[i]
+    const line = lines[i].text
     if (state !== 'matn' && HADITH_START.test(line) && isVowelled(line)) {
       throw new FileError(`a second hadith starts at "${line.slice(0, 40)}": one hadith per file`)
     }
@@ -215,7 +273,7 @@ const parseDay = (text) => {
     } else if (state === 'takhrij' && isUrdu(line)) {
       state = 'urdu'
     }
-    ;({ matn: arabic, takhrij, urdu })[state].push(line)
+    ;({ matn: arabic, takhrij, urdu })[state].push(state === 'takhrij' ? line.replace(FOOTNOTE, '') : line)
   }
 
   if (!arabic.join('').trim()) throw new FileError('the hadith has no Arabic after its number')
@@ -269,7 +327,7 @@ const main = () => {
       const entry = { date: `${day[1]}-${day[2]}-${day[3]}`, ...parseDay(text) }
       const bad = strays(JSON.stringify(entry))
       if (bad.length) throw new FileError(`characters that show as empty boxes: ${bad.join(', ')}`)
-      if (!entry.takhrij) warnings.push(`${file}: no takhrij found (a line starting أخرجه ...)`)
+      if (!entry.takhrij && entry.kind !== 'intro') warnings.push(`${file}: no takhrij found (a line starting أخرجه ...)`)
       entries.push(entry)
     } catch (e) {
       if (!(e instanceof FileError)) throw e
@@ -279,7 +337,7 @@ const main = () => {
 
   for (const e of entries) {
     console.log(
-      `${e.date}  hadith ${String(e.n).padStart(4)}  ` +
+      `${e.date}  hadith ${String(e.n ?? '-').padStart(4)}  ` +
         `${e.headings.map((h) => h.kind + (h.n ? ` ${h.n}` : '')).join(', ') || 'no headings'}  ` +
         `arabic ${e.arabic.length}  takhrij ${e.takhrij.length}  urdu ${e.urdu.length}`,
     )

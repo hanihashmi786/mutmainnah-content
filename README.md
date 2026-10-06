@@ -31,6 +31,12 @@ taareekh wali file pehle daal sakte hain; woh apne din tak chhupi rahegi.
 
 **Allah ke aeraab** khud lag jate hain (اللّٰه). Fasl aur topic na hon toh woh lines chhor dein.
 
+**WhatsApp wali post seedhi paste ho sakti hai.** Hadith ki line `>` se shuru ho toh number zaroori
+nahi. `(1) أخرجه ...` wala footnote number, `الْحَدِيث` ka label, links, `[9/1, 16:16] ...` wali line
+aur neeche kitab ka naam khud nikal jate hain. `الْقُرْآن` aur `الْآثَارُ وَالْأَقْوَالُ` heading ki tarah
+dikhte hain. Jis din sirf fasl aur us ki Urdu tehreer ho (koi hadith nahi), woh bhi chalta hai.
+Phone number aur group link public repo mein na daalein.
+
 **Title** sirf pichhle dinon ki list ke liye hai (app English mein ho tab). Na dein toh list
 mein topic ka Urdu dikhta hai.
 
