@@ -114,6 +114,9 @@ const fold = (s) =>
 
 // The footnote number the book sets before a takhrij, "(1) أخرجه ...".
 const FOOTNOTE = new RegExp(`^\\(\\s*${DIGITS}\\s*\\)\\s*`)
+// Whatever stands before the first letter: a stray ")" a right-to-left
+// paste leaves at the start of a line, a list number.
+const LEADING_NON_LETTER = new RegExp(`^[^${LETTER}]+`)
 
 const TAKHRIJ_WORDS = ['اخرجه', 'واخرجه', 'اخرجها', 'ذكره', 'وذكره', 'اورده', 'انظر', 'ينظر']
 const isTakhrij = (s) => {
@@ -121,7 +124,7 @@ const isTakhrij = (s) => {
   // A footnote mark on unvowelled Arabic is the takhrij whatever its first
   // word: "(2) أبو نعيم في حلية الأولياء".
   if (FOOTNOTE.test(s) && !isUrdu(s)) return true
-  const first = fold(s).split(/\s+/)[0] || ''
+  const first = fold(s).replace(LEADING_NON_LETTER, '').split(/\s+/)[0] || ''
   return TAKHRIJ_WORDS.includes(first) || first === 'رواه'
 }
 
@@ -146,7 +149,7 @@ const ARABIC_LETTER = new RegExp(`[${LETTER}]`)
 const isEnglish = (s) => /[A-Za-z]/.test(s) && !ARABIC_LETTER.test(s)
 const TITLE_PREFIX = /^title\s*[:\-]\s*/i
 
-const HADITH_START = new RegExp(`^(${DIGITS})\\s*(?:\\/\\s*(${DIGITS})\\s*)?[.${ch(0x06d4)}\\-]\\s*`)
+const HADITH_START = new RegExp(`^(${DIGITS})\\s*(?:\\/\\s*(${DIGITS})\\s*)?[.${ch(0x06d4)}\\-,${ch(0x060c)}]\\s*`)
 const TOPIC_START = new RegExp(`^\\(\\s*(${DIGITS})\\s*\\)\\s*`)
 const isFasl = (s) => fold(s).startsWith('فصل')
 
@@ -263,7 +266,17 @@ const parseDay = (text) => {
   let state = 'matn'
 
   for (i++; i < lines.length; i++) {
-    const line = lines[i].text
+    const { text: line, quoted } = lines[i]
+    if (state !== 'matn' && isVowelled(line) && isFasl(line)) {
+      throw new FileError(`a second post starts at "${line.slice(0, 40)}": one day per file`)
+    }
+    // A post may quote its Arabic in more than one block, an ayah and its
+    // translation, then the next ayah and its own. The later blocks join the
+    // Arabic and their translations the Urdu, each in order.
+    if (state !== 'matn' && quoted && isVowelled(line)) {
+      arabic.push(line.replace(HADITH_START, ''))
+      continue
+    }
     if (state !== 'matn' && HADITH_START.test(line) && isVowelled(line)) {
       throw new FileError(`a second hadith starts at "${line.slice(0, 40)}": one hadith per file`)
     }

@@ -109,6 +109,27 @@ test('a fasl opened by Urdu prose alone is an introduction', () => {
   assert.ok(d.urdu.startsWith('انسان'))
 })
 
+test('a stray ")" before the takhrij does not hide it', () => {
+  const d = parseDay(sample.replace('أخرجه', ') أخرجه'))
+  assert.ok(d.takhrij.startsWith(') أخرجه'))
+  assert.ok(!d.arabic.includes('أخرجه'))
+})
+
+test('a post quoting two Arabic blocks keeps both, with both translations', () => {
+  const lines = sample.split('\n')
+  const matn = lines.find((l) => l.startsWith('> 17.'))
+  const text = sample.replace('> 17. ', '> 1, ') + '\n> 2, ' + matn.slice(6) + '\n\n10. ' + 'دوسرا ترجمہ ہے۔\n'
+  const d = parseDay(text)
+  assert.strictEqual(d.n, 1)
+  assert.strictEqual(d.arabic.split('\n').length, 2)
+  assert.ok(d.arabic.split('\n')[1].startsWith('عَنْ'))
+  assert.ok(d.urdu.endsWith('دوسرا ترجمہ ہے۔'))
+})
+
+test('two posts in one file stop the build', () => {
+  assert.throws(() => parseDay(sample + '\n' + sample), /second/)
+})
+
 test('an Urdu line numbered like a hadith is not taken for one', () => {
   const text = sample.replace('> 17. ', '').replace('حضرت ابو', '23. حضرت ابو')
   assert.throws(() => parseDay(text), FileError)
