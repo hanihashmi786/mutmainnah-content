@@ -165,8 +165,10 @@ test('the index puts each day under its fasl, known by its letters alone', () =>
   assert.strictEqual(chapters.length, 2)
   assert.deepStrictEqual(days.map((d) => d.chapter), [0, 1, 1, 0])
   assert.strictEqual(days[1].title, 'Another')
-  assert.strictEqual(days[1].name, day.urdu.split('\n')[0])
-  assert.strictEqual(days[2].name, day.urdu.split('\n')[0])
+  // Named by the translation's opening words, not by the fasl.
+  const opening = days[1].name.replace(/…$/, '')
+  assert.ok(opening.length > 0 && day.urdu.split('\n')[0].startsWith(opening))
+  assert.strictEqual(days[2].name, days[1].name)
   assert.ok(!('title' in days[0]) || days[0].title === day.title)
 })
 
