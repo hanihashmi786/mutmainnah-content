@@ -40,6 +40,11 @@ Phone number aur group link public repo mein na daalein.
 **Title** sirf pichhle dinon ki list ke liye hai (app English mein ho tab). Na dein toh list
 mein topic ka Urdu dikhta hai.
 
+**Chapters** app fasl ki heading se banati hai: jis din ki heading jo fasl kahe, woh din usi
+chapter mein jata hai. Is liye har file mein fasl ki heading wahi rakhein jo kitab mein us hadith
+ke upar hai; aeraab ka farq chal jata hai, alfaaz ka nahi. Heading na ho toh din pichhle din wale
+chapter mein rehta hai.
+
 ## Agar ghalti ho
 
 File parhi na ja sake (number wali line na mile, Urdu na mile, taareekh ghalat ho) toh

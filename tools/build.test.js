@@ -5,7 +5,7 @@ const test = require('node:test')
 const assert = require('node:assert')
 const fs = require('fs')
 const path = require('path')
-const { parseDay, FileError } = require('./build')
+const { parseDay, buildIndex, FileError } = require('./build')
 
 const ch = (...cps) => String.fromCharCode(...cps)
 // اللّٰه with its marks in the order the app's tests require: lam, shadda, dagger alif, heh.
@@ -148,4 +148,24 @@ test('an Urdu line numbered like a hadith is not taken for one', () => {
 test('a day without the Urdu stops the build', () => {
   const text = sample.split('\n').filter((l) => !/[ےں]/.test(l)).join('\n')
   assert.throws(() => parseDay(text), /Urdu/)
+})
+
+test('the index puts each day under its fasl, known by its letters alone', () => {
+  const day = parseDay(sample)
+  const fasl = day.headings.find((h) => h.kind === 'fasl')
+  const bare = fasl.ar.replace(new RegExp(`[${ch(0x064b)}-${ch(0x065f)}${ch(0x0670)}]`, 'g'), '')
+  const other = { ...day, headings: [{ kind: 'fasl', ar: 'فَصْلٌ آخَرُ', ur: 'دوسری فصل' }], title: 'Another' }
+  const plain = { ...day, headings: [] }
+  const { chapters, days } = buildIndex([
+    { date: '2026-10-01', ...day },
+    { date: '2026-10-02', ...other },
+    { date: '2026-10-03', ...plain },
+    { date: '2026-10-04', ...day, headings: [{ ...fasl, ar: bare }] },
+  ])
+  assert.strictEqual(chapters.length, 2)
+  assert.deepStrictEqual(days.map((d) => d.chapter), [0, 1, 1, 0])
+  assert.strictEqual(days[1].title, 'Another')
+  assert.strictEqual(days[1].name, 'دوسری فصل')
+  assert.strictEqual(days[2].name, day.urdu.split('\n')[0])
+  assert.ok(!('title' in days[0]) || days[0].title === day.title)
 })

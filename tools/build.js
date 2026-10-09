@@ -320,6 +320,42 @@ const isRealDay = (y, m, d) => {
   return date.getUTCFullYear() === +y && date.getUTCMonth() === +m - 1 && date.getUTCDate() === +d
 }
 
+// ---- The index --------------------------------------------------------------
+
+/**
+ * Every day ever posted, a line each, for the app's chapter list and calendar:
+ * those reach back past latest.json's seventy-five days, and the month files
+ * behind them are fetched only when a day is opened.
+ *
+ *   chapters  [{ ar, ur }]                 each fasl, in the order it first came
+ *   days      [{ date, chapter, name, title? }]   oldest first
+ *
+ * A fasl is known by its letters alone, so the same heading pasted with a
+ * vowel more or less is one chapter. A day without a fasl heading stays in the
+ * one before it. `name` is what the app's row shows in Urdu: the topic's Urdu,
+ * else the fasl's, else the first line of the translation.
+ */
+const buildIndex = (entries) => {
+  const chapters = []
+  const byKey = new Map()
+  let current = null
+  const days = entries.map((e) => {
+    const fasl = e.headings.find((h) => h.kind === 'fasl' && h.ar)
+    if (fasl) {
+      const key = fold(fasl.ar).replace(NOT_LETTER, '')
+      if (!byKey.has(key)) {
+        byKey.set(key, chapters.length)
+        chapters.push({ ar: fasl.ar, ur: fasl.ur })
+      }
+      current = byKey.get(key)
+    }
+    const name =
+      e.headings.find((h) => h.kind === 'topic' && h.ur)?.ur || e.headings.find((h) => h.ur)?.ur || e.urdu.split('\n')[0]
+    return { date: e.date, chapter: current, name, ...(e.title && { title: e.title }) }
+  })
+  return { chapters, days }
+}
+
 // ---- The build --------------------------------------------------------------
 
 const main = () => {
@@ -379,6 +415,7 @@ const main = () => {
     // days it holds do not reach back this far.
     earliest: entries.length ? entries[0].date : null,
     months,
+    index: buildIndex(entries),
     entries: entries.filter((e) => e.date >= cutoff),
   })
   for (const month of months) {
@@ -389,4 +426,4 @@ const main = () => {
 
 if (require.main === module) main()
 
-module.exports = { parseDay, markAllah, FileError }
+module.exports = { parseDay, markAllah, buildIndex, FileError }
