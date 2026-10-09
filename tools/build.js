@@ -333,7 +333,8 @@ const isRealDay = (y, m, d) => {
  * A fasl is known by its letters alone, so the same heading pasted with a
  * vowel more or less is one chapter. A day without a fasl heading stays in the
  * one before it. `name` is what the app's row shows in Urdu: the topic's Urdu,
- * else the fasl's, else the first line of the translation.
+ * else the first line of the translation. Not the fasl's: the row stands
+ * under its fasl already.
  */
 const buildIndex = (entries) => {
   const chapters = []
@@ -349,8 +350,7 @@ const buildIndex = (entries) => {
       }
       current = byKey.get(key)
     }
-    const name =
-      e.headings.find((h) => h.kind === 'topic' && h.ur)?.ur || e.headings.find((h) => h.ur)?.ur || e.urdu.split('\n')[0]
+    const name = e.headings.find((h) => h.kind !== 'fasl' && h.ur)?.ur || e.urdu.split('\n')[0]
     return { date: e.date, chapter: current, name, ...(e.title && { title: e.title }) }
   })
   return { chapters, days }
