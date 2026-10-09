@@ -336,6 +336,15 @@ const isRealDay = (y, m, d) => {
  * else the first line of the translation. Not the fasl's: the row stands
  * under its fasl already.
  */
+// A row shows one line of the name, and a translation's first line can be a
+// whole paragraph: the index keeps the first words of it, cut at a space.
+const NAME_MAX = 100
+const clip = (s) => {
+  if (s.length <= NAME_MAX) return s
+  const cut = s.lastIndexOf(' ', NAME_MAX)
+  return `${s.slice(0, cut > 0 ? cut : NAME_MAX)}…`
+}
+
 const buildIndex = (entries) => {
   const chapters = []
   const byKey = new Map()
@@ -350,7 +359,7 @@ const buildIndex = (entries) => {
       }
       current = byKey.get(key)
     }
-    const name = e.headings.find((h) => h.kind !== 'fasl' && h.ur)?.ur || e.urdu.split('\n')[0]
+    const name = clip(e.headings.find((h) => h.kind !== 'fasl' && h.ur)?.ur || e.urdu.split('\n')[0])
     return { date: e.date, chapter: current, name, ...(e.title && { title: e.title }) }
   })
   return { chapters, days }

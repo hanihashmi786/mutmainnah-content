@@ -169,3 +169,11 @@ test('the index puts each day under its fasl, known by its letters alone', () =>
   assert.strictEqual(days[2].name, day.urdu.split('\n')[0])
   assert.ok(!('title' in days[0]) || days[0].title === day.title)
 })
+
+test('a long first line of translation is cut to a short name at a space', () => {
+  const day = parseDay(sample)
+  const long = 'لفظ '.repeat(60).trim()
+  const { days } = buildIndex([{ date: '2026-10-01', ...day, headings: [], urdu: long }])
+  assert.ok(days[0].name.length <= 101)
+  assert.ok(days[0].name.endsWith('لفظ…'))
+})
