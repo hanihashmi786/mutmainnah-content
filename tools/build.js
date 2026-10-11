@@ -156,7 +156,13 @@ const isFasl = (s) => fold(s).startsWith('فصل')
 // Where the hadith starts: the line a WhatsApp post quotes with ">", or the
 // line that opens on the hadith's number, "17. عَنْ ...". Only Arabic counts,
 // so an Urdu line numbered "23. اور ..." is never taken for a hadith.
-const opensHadith = (l) => l.quoted || (HADITH_START.test(l.text) && isVowelled(l.text.replace(HADITH_START, '')))
+// A fasl the book numbers, "8 - فَصْلٌ ...", is a heading, not a hadith.
+const opensHadith = (l) => {
+  if (l.quoted) return true
+  if (!HADITH_START.test(l.text)) return false
+  const rest = l.text.replace(HADITH_START, '')
+  return isVowelled(rest) && !isFasl(rest)
+}
 
 // ---- The Name ---------------------------------------------------------------
 
@@ -219,7 +225,14 @@ const parseDay = (text) => {
     }
     const heading = { kind: isFasl(line) ? 'fasl' : 'other', ar: line, ur: '' }
     const topic = line.match(TOPIC_START)
-    if (topic) {
+    const numbered = line.match(HADITH_START)
+    if (numbered && isFasl(line.slice(numbered[0].length))) {
+      // The fasl's number in the book goes with it, off the heading's text,
+      // so the chapter reads the same on every day it heads.
+      heading.kind = 'fasl'
+      heading.n = toInt(numbered[1])
+      heading.ar = line.slice(numbered[0].length)
+    } else if (topic) {
       heading.kind = 'topic'
       heading.n = toInt(topic[1])
       heading.ar = line.slice(topic[0].length)

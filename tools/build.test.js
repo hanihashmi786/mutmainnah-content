@@ -179,3 +179,12 @@ test('a long first line of translation is cut to a short name at a space', () =>
   assert.ok(days[0].name.length <= 101)
   assert.ok(days[0].name.endsWith('لفظ…'))
 })
+
+test('a fasl numbered in the book, "8 - فَصْلٌ ...", is a heading, not the hadith', () => {
+  const fasl = sample.split('\n').find((l) => l.startsWith('فَصْلٌ'))
+  const d = parseDay(sample.replace(fasl, `8 - ${fasl}`))
+  const h = d.headings.find((x) => x.kind === 'fasl')
+  assert.strictEqual(h.n, 8)
+  assert.ok(h.ar.startsWith('فَصْلٌ'))
+  assert.strictEqual(d.n, 17)
+})
